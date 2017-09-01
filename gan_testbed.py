@@ -1,14 +1,14 @@
 import os
 import sys
 import pip
+from datetime import datetime
 from enum import Enum
-from tf_model import TF_model
-from pt_model import PT_model
-
-import matplotlib.pyplot as plt
 from PyQt5.QtWidgets import *
+import matplotlib.pyplot as plt
 from matplotlib.backends.backend_qt5agg import (FigureCanvasQTAgg as FigureCanvas)
 
+from tf_model import TF_model
+from pt_model import PT_model
 import ui_gan_testbed
 
 
@@ -180,6 +180,8 @@ class MyWindow(QMainWindow, ui_gan_testbed.Ui_MainWindow):
             self.gan = PT_model(self.params)
 
         self.gan.build_model()
+        print("\nModel is built.")
+        self.textEdit_log.append("Model is built.")
 
         self.pushButton_trainModel.setEnabled(True)
         self.pushButton_evaluation.setEnabled(True)
@@ -195,19 +197,22 @@ class MyWindow(QMainWindow, ui_gan_testbed.Ui_MainWindow):
         # self.scrollArea_modelViewer.setWidget(self.label_modelViewer)
 
     def btn_TrainModel_clicked(self):
-        # save log & result dir
-        num_runs = 1
-        log_dir = self.params.log_dir + '/' + self.gan.model_name + '/run_%d' % num_runs
-        result_dir = self.params.result_dir + '/' + self.gan.model_name + '/run_%d' % num_runs
-
-        # increase number of runs
-        while os.path.exists(log_dir):
-            num_runs += 1
-            log_dir = self.params.log_dir + '/' + self.gan.model_name + '/run_%d' % num_runs
-            result_dir = self.params.result_dir + '/' + self.gan.model_name + '/run_%d' % num_runs
         # update dirs
-        self.params.log_dir = log_dir
-        self.params.result_dir = result_dir
+        temp_log_dir = os.path.join(self.params.log_dir, self.params.dataset, self.gan.model_name)
+        temp_result_dir = os.path.join(self.params.result_dir, self.params.dataset, self.gan.model_name)
+        temp_checkpoint_dir = os.path.join(self.params.checkpoint_dir, self.params.dataset, self.gan.model_name)
+        # timestamp
+        now = datetime.now()
+        run_stamp = now.strftime('%Y-%m-%d_%H:%M')
+
+        if self.radioButton_tensorflow.isChecked():
+            self.params.log_dir = temp_log_dir + '/TF_%s' % run_stamp
+            self.params.result_dir = temp_result_dir + '/TF_%s' % run_stamp
+            self.params.checkpoint_dir = temp_checkpoint_dir + '/TF_%s' % run_stamp
+        elif self.radioButton_pytorch.isChecked():
+            self.params.log_dir = temp_log_dir + '/PT_%s' % run_stamp
+            self.params.result_dir = temp_result_dir + '/PT_%s' % run_stamp
+            self.params.checkpoint_dir = temp_checkpoint_dir + '/PT_%s' % run_stamp
 
         # train model
         self.gan.train_model(self.params.checkpoint_dir, self.params.result_dir, self.params.log_dir)
@@ -225,7 +230,7 @@ class MyWindow(QMainWindow, ui_gan_testbed.Ui_MainWindow):
     def btn_TensorBoard_clicked(self):
         import subprocess
 
-        subprocess.Popen("tensorboard --logdir=%s" % self.params.log_dir, shell=True)
+        subprocess.Popen("/home/mjkim/tensorflow/GAN_testbed/tensorboard --logdir=%s" % self.params.log_dir, shell=True)
 
         print('\nTensorBoard is running: logdir =', self.params.log_dir)
 

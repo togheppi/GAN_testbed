@@ -5,6 +5,7 @@ import torch.nn.functional as F
 import torch.optim as optim
 import matplotlib.pyplot as plt
 from torch.autograd import Variable
+from logger import Logger
 
 class generator(nn.Module):
     # Network Architecture is exactly same as in infoGAN (https://arxiv.org/abs/1606.03657)
@@ -87,10 +88,7 @@ class infoGAN(object):
         self.epoch = args.epoch
         self.sample_num = 100
         self.batch_size = args.batch_size
-        self.save_dir = args.save_dir
-        self.result_dir = args.result_dir
         self.dataset = args.dataset
-        self.log_dir = args.log_dir
         self.gpu_mode = args.gpu_mode
         self.model_name = args.gan_type
         self.SUPERVISED = SUPERVISED        # if it is true, label info is directly used for code
@@ -173,7 +171,7 @@ class infoGAN(object):
                 Variable(self.sample_c_, volatile=True), Variable(self.sample_z2_, volatile=True), \
                 Variable(self.sample_y2_, volatile=True), Variable(self.sample_c2_, volatile=True)
 
-    def train(self):
+    def train(self, save_dir, result_dir, log_dir):
         self.train_hist = {}
         self.train_hist['D_loss'] = []
         self.train_hist['G_loss'] = []
@@ -185,6 +183,10 @@ class infoGAN(object):
             self.y_real_, self.y_fake_ = Variable(torch.ones(self.batch_size, 1).cuda()), Variable(torch.zeros(self.batch_size, 1).cuda())
         else:
             self.y_real_, self.y_fake_ = Variable(torch.ones(self.batch_size, 1)), Variable(torch.zeros(self.batch_size, 1))
+
+        # set the logger for tensorboard
+        logger = Logger(log_dir)
+        step = 0
 
         self.D.train()
         print('training start!!')
@@ -247,31 +249,38 @@ class infoGAN(object):
                 info_loss.backward()
                 self.info_optimizer.step()
 
+                print("Epoch: [%2d] [%4d/%4d] D_loss: %.8f, G_loss: %.8f, info_loss: %.8f" %
+                      ((epoch + 1), (iter + 1), len(self.data_X) // self.batch_size, D_loss.data[0], G_loss.data[0], info_loss.data[0]))
 
-                if ((iter + 1) % 100) == 0:
-                    print("Epoch: [%2d] [%4d/%4d] D_loss: %.8f, G_loss: %.8f, info_loss: %.8f" %
-                          ((epoch + 1), (iter + 1), len(self.data_X) // self.batch_size, D_loss.data[0], G_loss.data[0], info_loss.data[0]))
+                # ============ TensorBoard logging ============#
+                logger.scalar_summary('d_loss_real', D_real_loss.data[0], step + 1)
+                logger.scalar_summary('d_loss_fake', D_fake_loss.data[0], step + 1)
+                logger.scalar_summary('d_loss', D_loss.data[0], step + 1)
+                logger.scalar_summary('g_loss', G_loss.data[0], step + 1)
+
+                logger.scalar_summary('q_loss', info_loss.data[0], step + 1)
+                logger.scalar_summary('q_disc_loss', disc_loss.data[0], step + 1)
+                logger.scalar_summary('q_cont_loss', cont_loss.data[0], step + 1)
+                step += 1
 
             self.train_hist['per_epoch_time'].append(time.time() - epoch_start_time)
-            self.visualize_results((epoch+1))
+            self.visualize_results((epoch+1), result_dir)
 
         self.train_hist['total_time'].append(time.time() - start_time)
         print("Avg one epoch time: %.2f, total %d epochs time: %.2f" % (np.mean(self.train_hist['per_epoch_time']),
                                                                         self.epoch, self.train_hist['total_time'][0]))
         print("Training finish!... save training results")
 
-        self.save()
-        pt_gan.utils.generate_animation(self.result_dir + '/' + self.dataset + '/' + self.model_name + '/' + self.model_name,
-                                 self.epoch)
-        pt_gan.utils.generate_animation(self.result_dir + '/' + self.dataset + '/' + self.model_name + '/' + self.model_name + '_cont',
-                                 self.epoch)
-        self.loss_plot(self.train_hist, os.path.join(self.save_dir, self.dataset, self.model_name), self.model_name)
+        self.save(save_dir)
+        pt_gan.utils.generate_animation(result_dir + '/' + self.model_name, self.epoch)
+        pt_gan.utils.generate_animation(result_dir + '/' + self.model_name + '_cont', self.epoch)
+        self.loss_plot(self.train_hist, save_dir, self.model_name)
 
-    def visualize_results(self, epoch):
+    def visualize_results(self, epoch, result_dir):
         self.G.eval()
 
-        if not os.path.exists(self.result_dir + '/' + self.dataset + '/' + self.model_name):
-            os.makedirs(self.result_dir + '/' + self.dataset + '/' + self.model_name)
+        if not os.path.exists(result_dir):
+            os.makedirs(result_dir)
 
         image_frame_dim = int(np.floor(np.sqrt(self.sample_num)))
 
@@ -283,7 +292,7 @@ class infoGAN(object):
             samples = samples.data.numpy().transpose(0, 2, 3, 1)
 
         pt_gan.utils.save_images(samples[:image_frame_dim * image_frame_dim, :, :, :], [image_frame_dim, image_frame_dim],
-                          self.result_dir + '/' + self.dataset + '/' + self.model_name + '/' + self.model_name + '_epoch%03d' % epoch + '.png')
+                          result_dir + '/' + self.model_name + '_epoch%03d' % epoch + '.png')
 
         """ manipulating two continous codes """
         samples = self.G(self.sample_z2_, self.sample_c2_, self.sample_y2_)
@@ -293,11 +302,9 @@ class infoGAN(object):
             samples = samples.data.numpy().transpose(0, 2, 3, 1)
 
         pt_gan.utils.save_images(samples[:image_frame_dim * image_frame_dim, :, :, :], [image_frame_dim, image_frame_dim],
-                          self.result_dir + '/' + self.dataset + '/' + self.model_name + '/' + self.model_name + '_cont_epoch%03d' % epoch + '.png')
+                          result_dir + '/' + self.dataset + '/' + self.model_name + '/' + self.model_name + '_cont_epoch%03d' % epoch + '.png')
 
-    def save(self):
-        save_dir = os.path.join(self.save_dir, self.dataset, self.model_name)
-
+    def save(self, save_dir):
         if not os.path.exists(save_dir):
             os.makedirs(save_dir)
 
@@ -307,9 +314,7 @@ class infoGAN(object):
         with open(os.path.join(save_dir, self.model_name + '_history.pkl'), 'wb') as f:
             pickle.dump(self.train_hist, f)
 
-    def load(self):
-        save_dir = os.path.join(self.save_dir, self.dataset, self.model_name)
-
+    def load(self, save_dir):
         self.G.load_state_dict(torch.load(os.path.join(save_dir, self.model_name + '_G.pkl')))
         self.D.load_state_dict(torch.load(os.path.join(save_dir, self.model_name + '_D.pkl')))
 

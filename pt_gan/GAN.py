@@ -3,6 +3,7 @@ import numpy as np
 import torch.nn as nn
 import torch.optim as optim
 from torch.autograd import Variable
+from logger import Logger
 
 class generator(nn.Module):
     # Network Architecture is exactly same as in infoGAN (https://arxiv.org/abs/1606.03657)
@@ -79,10 +80,7 @@ class GAN(object):
         self.epoch = args.epoch
         self.sample_num = 64
         self.batch_size = args.batch_size
-        self.save_dir = args.save_dir
-        self.result_dir = args.result_dir
         self.dataset = args.dataset
-        self.log_dir = args.log_dir
         self.gpu_mode = args.gpu_mode
         self.model_name = args.gan_type
 
@@ -114,7 +112,7 @@ class GAN(object):
         else:
             self.sample_z_ = Variable(torch.rand((self.batch_size, self.z_dim)), volatile=True)
 
-    def train(self):
+    def train(self, save_dir, result_dir, log_dir):
         self.train_hist = {}
         self.train_hist['D_loss'] = []
         self.train_hist['G_loss'] = []
@@ -125,6 +123,10 @@ class GAN(object):
             self.y_real_, self.y_fake_ = Variable(torch.ones(self.batch_size, 1).cuda()), Variable(torch.zeros(self.batch_size, 1).cuda())
         else:
             self.y_real_, self.y_fake_ = Variable(torch.ones(self.batch_size, 1)), Variable(torch.zeros(self.batch_size, 1))
+
+        # set the logger for tensorboard
+        logger = Logger(log_dir)
+        step = 0
 
         self.D.train()
         print('training start!!')
@@ -168,28 +170,33 @@ class GAN(object):
                 G_loss.backward()
                 self.G_optimizer.step()
 
-                # if ((iter + 1) % 100) == 0:
                 print("Epoch: [%2d] [%4d/%4d] D_loss: %.8f, G_loss: %.8f" %
                       ((epoch + 1), (iter + 1), len(self.data_X) // self.batch_size, D_loss.data[0], G_loss.data[0]))
 
+                # ============ TensorBoard logging ============#
+                logger.scalar_summary('d_loss_real', D_real_loss.data[0], step + 1)
+                logger.scalar_summary('d_loss_fake', D_fake_loss.data[0], step + 1)
+                logger.scalar_summary('d_loss', D_loss.data[0], step + 1)
+                logger.scalar_summary('g_loss', G_loss.data[0], step + 1)
+                step += 1
+
             self.train_hist['per_epoch_time'].append(time.time() - epoch_start_time)
-            self.visualize_results((epoch+1))
+            self.visualize_results((epoch+1), result_dir)
 
         self.train_hist['total_time'].append(time.time() - start_time)
         print("Avg one epoch time: %.2f, total %d epochs time: %.2f" % (np.mean(self.train_hist['per_epoch_time']),
               self.epoch, self.train_hist['total_time'][0]))
         print("Training finish!... save training results")
 
-        self.save()
-        pt_gan.utils.generate_animation(self.result_dir + '/' + self.dataset + '/' + self.model_name + '/' + self.model_name,
-                                 self.epoch)
-        pt_gan.utils.loss_plot(self.train_hist, os.path.join(self.save_dir, self.dataset, self.model_name), self.model_name)
+        self.save(save_dir)
+        pt_gan.utils.generate_animation(result_dir + '/' + self.model_name, self.epoch)
+        pt_gan.utils.loss_plot(self.train_hist, save_dir, self.model_name)
 
-    def visualize_results(self, epoch, fix=True):
+    def visualize_results(self, epoch, result_dir, fix=True):
         self.G.eval()
 
-        if not os.path.exists(self.result_dir + '/' + self.dataset + '/' + self.model_name):
-            os.makedirs(self.result_dir + '/' + self.dataset + '/' + self.model_name)
+        if not os.path.exists(result_dir):
+            os.makedirs(result_dir)
 
         tot_num_samples = min(self.sample_num, self.batch_size)
         image_frame_dim = int(np.floor(np.sqrt(tot_num_samples)))
@@ -212,11 +219,9 @@ class GAN(object):
             samples = samples.data.numpy().transpose(0, 2, 3, 1)
 
         pt_gan.utils.save_images(samples[:image_frame_dim * image_frame_dim, :, :, :], [image_frame_dim, image_frame_dim],
-                          self.result_dir + '/' + self.dataset + '/' + self.model_name + '/' + self.model_name + '_epoch%03d' % epoch + '.png')
+                          result_dir + '/' + self.model_name + '_epoch%03d' % epoch + '.png')
 
-    def save(self):
-        save_dir = os.path.join(self.save_dir, self.dataset, self.model_name)
-
+    def save(self, save_dir):
         if not os.path.exists(save_dir):
             os.makedirs(save_dir)
 
@@ -226,8 +231,6 @@ class GAN(object):
         with open(os.path.join(save_dir, self.model_name + '_history.pkl'), 'wb') as f:
             pickle.dump(self.train_hist, f)
 
-    def load(self):
-        save_dir = os.path.join(self.save_dir, self.dataset, self.model_name)
-
+    def load(self, save_dir):
         self.G.load_state_dict(torch.load(os.path.join(save_dir, self.model_name + '_G.pkl')))
         self.D.load_state_dict(torch.load(os.path.join(save_dir, self.model_name + '_D.pkl')))

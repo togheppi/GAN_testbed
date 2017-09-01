@@ -41,8 +41,8 @@ class PT_model():
         pass
 
     def train_model(self, checkpoint_dir, result_dir, log_dir):
-        self.gan.train()
+        self.gan.train(checkpoint_dir, result_dir, log_dir)
 
     def test_model(self, result_dir):
         # visualize learned generator
-        self.gan.visualize_results(self.params.epoch - 1)
+        self.gan.visualize_results(self.params.epoch - 1, result_dir)

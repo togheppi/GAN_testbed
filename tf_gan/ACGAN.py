@@ -11,9 +11,6 @@ class ACGAN(object):
     def __init__(self, sess, epoch, batch_size, dataset_name):
         self.sess = sess
         self.dataset_name = dataset_name
-        # self.checkpoint_dir = checkpoint_dir
-        # self.result_dir = result_dir
-        # self.log_dir = log_dir
         self.epoch = epoch
         self.batch_size = batch_size
         self.model_name = "ACGAN"     # name for checkpoint
@@ -314,8 +311,6 @@ class ACGAN(object):
             self.output_height, self.output_width)
 
     def save(self, checkpoint_dir, step):
-        checkpoint_dir = os.path.join(checkpoint_dir, self.model_dir, self.model_name)
-
         if not os.path.exists(checkpoint_dir):
             os.makedirs(checkpoint_dir)
 
@@ -324,7 +319,6 @@ class ACGAN(object):
     def load(self, checkpoint_dir):
         import re
         print(" [*] Reading checkpoints...")
-        checkpoint_dir = os.path.join(checkpoint_dir, self.model_dir, self.model_name)
 
         ckpt = tf.train.get_checkpoint_state(checkpoint_dir)
         if ckpt and ckpt.model_checkpoint_path:
