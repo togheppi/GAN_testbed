@@ -11,7 +11,6 @@ from tf_model import TF_model
 from pt_model import PT_model
 import ui_gan_testbed
 
-
 # enum parameters
 layer_type = Enum('layer_type', 'FC CNN')
 activate_fn_type = Enum('activate_fn_type', 'No_act Sigmoid tanh ReLU')
@@ -24,9 +23,23 @@ class ModelParams:
         # initial parameters
         self.gan_type = 'GAN'
         self.dataset = 'mnist'
-        self.input_size = 28
-        self.epoch = 20
         self.batch_size = 100
+        self.gpu_mode = False
+        self.check_params()
+
+    """checking arguments"""
+    def check_params(self):
+        # --batch_size
+        try:
+            assert self.batch_size >= 1
+        except:
+            print('batch size must be larger than or equal to one')
+
+
+class TrainParams:
+    def __init__(self):
+        # initial parameters
+        self.epoch = 20
         self.checkpoint_dir = 'checkpoint'
         self.save_dir = 'models'
         self.result_dir = 'results'
@@ -35,11 +48,9 @@ class ModelParams:
         self.lrD = 0.0002
         self.beta1 = 0.5
         self.beta2 = 0.999
-        self.gpu_mode = False
-        self.check_args()
-
+    
     """checking arguments"""
-    def check_args(self):
+    def check_params(self):
         # --checkpoint_dir
         if not os.path.exists(self.checkpoint_dir):
             os.makedirs(self.checkpoint_dir)
@@ -52,17 +63,15 @@ class ModelParams:
         if not os.path.exists(self.log_dir):
             os.makedirs(self.log_dir)
 
+        # --save_dir
+        if not os.path.exists(self.save_dir):
+            os.makedirs(self.save_dir)
+
         # --epoch
         try:
             assert self.epoch >= 1
         except:
             print('number of epochs must be larger than or equal to one')
-
-        # --batch_size
-        try:
-            assert self.batch_size >= 1
-        except:
-            print('batch size must be larger than or equal to one')
 
 
 class MyWindow(QMainWindow, ui_gan_testbed.Ui_MainWindow):
@@ -78,16 +87,7 @@ class MyWindow(QMainWindow, ui_gan_testbed.Ui_MainWindow):
         self.comboBox_actFnGen.addItems(['ReLU', 'Leaky ReLU', 'tanh'])
         self.comboBox_actFnDisc.addItems(['ReLU', 'Leaky ReLU', 'tanh'])
         self.comboBox_initFn.addItems(['No_init', 'Normal', 'Xavier'])
-        self.comboBox_lossFn.addItems(['Cross Entropy'])
         self.comboBox_optimizer.addItems(['SGD', 'Adam', 'RMSProp'])
-
-        self.comboBox_dataset.setCurrentIndex(0)    # mnist
-        self.comboBox_model.setCurrentIndex(0)      # GAN
-        self.comboBox_actFnGen.setCurrentIndex(0)   # ReLU
-        self.comboBox_actFnDisc.setCurrentIndex(1)  # ReLU
-        self.comboBox_initFn.setCurrentIndex(0)     # No initializer
-        self.comboBox_lossFn.setCurrentIndex(0)     # Cross-Entropy
-        self.comboBox_optimizer.setCurrentIndex(1)  # Adam optimizer
 
         self.pushButton_buildModel.clicked.connect(self.btn_BuildModel_clicked)
         self.pushButton_clearModel.clicked.connect(self.btn_ClearModel_clicked)
@@ -103,14 +103,21 @@ class MyWindow(QMainWindow, ui_gan_testbed.Ui_MainWindow):
         self.radioButton_tensorflow.clicked.connect(self.tensorflow_selected)
         self.radioButton_pytorch.clicked.connect(self.pytorch_selected)
 
-        # initial parameters
-        self.params = ModelParams()
-
         # load library module
         if self.radioButton_tensorflow.isChecked():
             self.tensorflow_selected()
         elif self.radioButton_pytorch.isChecked():
             self.pytorch_selected()
+
+        # initial parameters
+        self.model_params = ModelParams()
+        self.train_params = TrainParams()
+        self.comboBox_model.setCurrentText(self.model_params.gan_type)  # GAN
+        self.comboBox_dataset.setCurrentText(self.model_params.dataset)  # mnist
+        self.comboBox_actFnGen.setCurrentIndex(0)  # ReLU
+        self.comboBox_actFnDisc.setCurrentIndex(1)  # ReLU
+        self.comboBox_initFn.setCurrentIndex(0)  # No initializer
+        self.comboBox_optimizer.setCurrentIndex(1)  # Adam optimizer
 
         # show score
         self.fig = plt.Figure()
@@ -153,8 +160,11 @@ class MyWindow(QMainWindow, ui_gan_testbed.Ui_MainWindow):
 
     def btn_ClearModel_clicked(self):
         # reset parameters
-        del self.params
-        self.params = ModelParams()
+        del self.model_params
+        del self.train_params
+        self.model_params = ModelParams()
+        self.train_params = TrainParams()
+        self.comboBox_model.setCurrentText(self.model_params.gan_type)
 
         self.label_modelViewer.clear()
         print('Clear model.')
@@ -165,19 +175,18 @@ class MyWindow(QMainWindow, ui_gan_testbed.Ui_MainWindow):
 
     def btn_BuildModel_clicked(self):
         # model parameters
-        self.params.gan_type = self.comboBox_model.currentText()
-        self.params.input_size = self.spinBox_inputSize.value()
-        self.params.epoch = self.spinBox_numEpochs.value()
-        self.params.batch_size = self.spinBox_batchSize.value()
+        self.model_params.gan_type = self.comboBox_model.currentText()
+        self.model_params.gpu_mode = self.checkBox_gpuMode.isChecked()
+        self.model_params.batch_size = self.spinBox_batchSize.value()
 
         # initialize a model with respective library
         print("\nBuilding a model...")
         self.textEdit_log.append("Building a model...")
         if self.radioButton_tensorflow.isChecked():
-            self.gan = TF_model(self.params)
+            self.gan = TF_model(self.model_params)
 
         elif self.radioButton_pytorch.isChecked():
-            self.gan = PT_model(self.params)
+            self.gan = PT_model(self.model_params)
 
         self.gan.build_model()
         print("\nModel is built.")
@@ -188,7 +197,7 @@ class MyWindow(QMainWindow, ui_gan_testbed.Ui_MainWindow):
         self.pushButton_trainModel.setEnabled(True)
         return True
 
-        # img_fn = self.params.checkpoint_dir + self.params.name + '.png'
+        # img_fn = self.model_params.checkpoint_dir + self.model_params.name + '.png'
         # pixmap = QPixmap(img_fn)
         # self.label_modelViewer = QLabel()
         #
@@ -198,41 +207,45 @@ class MyWindow(QMainWindow, ui_gan_testbed.Ui_MainWindow):
 
     def btn_TrainModel_clicked(self):
         # update dirs
-        temp_log_dir = os.path.join(self.params.log_dir, self.params.dataset, self.gan.model_name)
-        temp_result_dir = os.path.join(self.params.result_dir, self.params.dataset, self.gan.model_name)
-        temp_checkpoint_dir = os.path.join(self.params.checkpoint_dir, self.params.dataset, self.gan.model_name)
+        temp_log_dir = os.path.join(self.train_params.log_dir, self.model_params.dataset, self.gan.model_name)
+        temp_result_dir = os.path.join(self.train_params.result_dir, self.model_params.dataset, self.gan.model_name)
+        temp_checkpoint_dir = os.path.join(self.train_params.checkpoint_dir, self.model_params.dataset, self.gan.model_name)
         # timestamp
         now = datetime.now()
         run_stamp = now.strftime('%Y-%m-%d_%H:%M')
 
         if self.radioButton_tensorflow.isChecked():
-            self.params.log_dir = temp_log_dir + '/TF_%s' % run_stamp
-            self.params.result_dir = temp_result_dir + '/TF_%s' % run_stamp
-            self.params.checkpoint_dir = temp_checkpoint_dir + '/TF_%s' % run_stamp
+            self.train_params.log_dir = temp_log_dir + '/TF_%s' % run_stamp
+            self.train_params.result_dir = temp_result_dir + '/TF_%s' % run_stamp
+            self.train_params.checkpoint_dir = temp_checkpoint_dir + '/TF_%s' % run_stamp
         elif self.radioButton_pytorch.isChecked():
-            self.params.log_dir = temp_log_dir + '/PT_%s' % run_stamp
-            self.params.result_dir = temp_result_dir + '/PT_%s' % run_stamp
-            self.params.checkpoint_dir = temp_checkpoint_dir + '/PT_%s' % run_stamp
+            self.train_params.log_dir = temp_log_dir + '/PT_%s' % run_stamp
+            self.train_params.result_dir = temp_result_dir + '/PT_%s' % run_stamp
+            self.train_params.checkpoint_dir = temp_checkpoint_dir + '/PT_%s' % run_stamp
+
+        # training parameters
+        self.train_params.epoch = self.spinBox_numEpochs.value()
+        self.train_params.lrG = (float)(self.lineEdit_learningRateG.text())
+        self.train_params.lrD = (float)(self.lineEdit_learningRateD.text())
 
         # train model
-        self.gan.train_model(self.params.checkpoint_dir, self.params.result_dir, self.params.log_dir)
+        self.gan.train_model(self.train_params)
         print(" [*] Training finished!")
         self.textEdit_log.append(" [*] Training finished.")
 
         self.pushButton_evaluation.setEnabled(True)
 
     def btn_Evaluation_clicked(self):
-        # visualize learned generator
-        self.gan.test_model(self.params.result_dir)
+
         print(" [*] Testing finished!")
         self.textEdit_log.append(" [*] Testing finished!")
 
     def btn_TensorBoard_clicked(self):
         import subprocess
 
-        subprocess.Popen("/home/mjkim/tensorflow/GAN_testbed/tensorboard --logdir=%s" % self.params.log_dir, shell=True)
+        subprocess.Popen("/home/mjkim/tensorflow/GAN_testbed/tensorboard --logdir=%s" % self.train_params.log_dir, shell=True)
 
-        print('\nTensorBoard is running: logdir =', self.params.log_dir)
+        print('\nTensorBoard is running: logdir =', self.train_params.log_dir)
 
 
 if __name__ == "__main__":

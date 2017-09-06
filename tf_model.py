@@ -16,36 +16,31 @@ class TF_model():
         super(TF_model, self).__init__()
         self.params = params
         self.model_name = params.gan_type
+
         # open session
         self.sess = tf.InteractiveSession(config=tf.ConfigProto(allow_soft_placement=True))
+
         # declare instance for GAN
         if params.gan_type == 'GAN':
-            self.gan = GAN(self.sess, epoch=self.params.epoch, batch_size=self.params.batch_size,
-                           dataset_name=self.params.dataset)
+            self.gan = GAN(self.sess, params)
         elif params.gan_type == 'CGAN':
-            self.gan = CGAN(self.sess, epoch=self.params.epoch, batch_size=self.params.batch_size,
-                            dataset_name=self.params.dataset)
+            self.gan = CGAN(self.sess, params)
         elif params.gan_type == 'ACGAN':
-            self.gan = ACGAN(self.sess, epoch=self.params.epoch, batch_size=self.params.batch_size,
-                             dataset_name=self.params.dataset)
+            self.gan = ACGAN(self.sess, params)
         elif params.gan_type == 'infoGAN':
-            self.gan = infoGAN(self.sess, epoch=self.params.epoch, batch_size=self.params.batch_size,
-                               dataset_name=self.params.dataset)
+            self.gan = infoGAN(self.sess, params)
         elif params.gan_type == 'EBGAN':
-            self.gan = EBGAN(self.sess, epoch=self.params.epoch, batch_size=self.params.batch_size,
-                             dataset_name=self.params.dataset)
+            self.gan = EBGAN(self.sess, params)
         elif params.gan_type == 'WGAN':
-            self.gan = WGAN(self.sess, epoch=self.params.epoch, batch_size=self.params.batch_size,
-                            dataset_name=self.params.dataset)
+            self.gan = WGAN(self.sess, params)
         elif params.gan_type == 'DRAGAN':
-            self.gan = DRAGAN(self.sess, epoch=self.params.epoch, batch_size=self.params.batch_size,
-                              dataset_name=self.params.dataset)
+            self.gan = DRAGAN(self.sess, params)
         elif params.gan_type == 'LSGAN':
-            self.gan = LSGAN(self.sess, epoch=self.params.epoch, batch_size=self.params.batch_size,
-                             dataset_name=self.params.dataset)
+            self.gan = LSGAN(self.sess, params)
         elif params.gan_type == 'BEGAN':
-            self.gan = BEGAN(self.sess, epoch=self.params.epoch, batch_size=self.params.batch_size,
-                             dataset_name=self.params.dataset)
+            self.gan = BEGAN(self.sess, params)
+        else:
+            raise Exception("[!] There is no option for " + params.gan_type)
 
     def build_model(self):
         # build graph
@@ -54,10 +49,8 @@ class TF_model():
         # show network architecture
         show_all_variables()
         
-    def train_model(self, checkpoint_dir, result_dir, log_dir):
-        self.gan.train(checkpoint_dir, result_dir, log_dir)
+    def train_model(self, params):
+        self.gan.train(params)
 
     def test_model(self, result_dir):
-        # visualize learned generator
-        self.gan.visualize_results(self.params.epoch - 1, result_dir)
-
+        pass

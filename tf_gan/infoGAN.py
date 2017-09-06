@@ -8,14 +8,13 @@ from tf_gan.utils import *
 
 
 class infoGAN(object):
-    def __init__(self, sess, epoch, batch_size, dataset_name, SUPERVISED=True):
+    def __init__(self, sess, params, SUPERVISED=True):
         self.sess = sess
-        self.dataset_name = dataset_name
-        self.epoch = epoch
-        self.batch_size = batch_size
+        self.dataset = params.dataset
+        self.batch_size = params.batch_size
         self.model_name = "infoGAN"     # name for checkpoint
 
-        if dataset_name == 'mnist' or 'fashion-mnist':
+        if self.dataset == 'mnist' or 'fashion-mnist':
             # parameters
             self.input_height = 28
             self.input_width = 28
@@ -28,10 +27,6 @@ class infoGAN(object):
 
             self.SUPERVISED = SUPERVISED # if it is true, label info is directly used for code
 
-            # train
-            self.learning_rate = 0.0002
-            self.beta1 = 0.5
-
             # test
             self.sample_num = 64  # number of generated images to be saved
 
@@ -40,7 +35,7 @@ class infoGAN(object):
             self.len_continuous_code = 2  # gaussian distribution (e.g. rotation, thickness)
 
             # load mnist
-            self.data_X, self.data_y = load_mnist(self.dataset_name)
+            self.data_X, self.data_y = load_mnist(self.dataset)
 
             # get number of batches for a single epoch
             self.num_batches = len(self.data_X) // self.batch_size
@@ -145,22 +140,6 @@ class infoGAN(object):
         # get information loss
         self.q_loss = q_disc_loss + q_cont_loss
 
-        """ Training """
-        # divide trainable variables into a group for D and a group for G
-        t_vars = tf.trainable_variables()
-        d_vars = [var for var in t_vars if 'd_' in var.name]
-        g_vars = [var for var in t_vars if 'g_' in var.name]
-        q_vars = [var for var in t_vars if 'd_' or 'c_' or 'g_' in var.name]
-
-        # optimizers
-        with tf.control_dependencies(tf.get_collection(tf.GraphKeys.UPDATE_OPS)):
-            self.d_optim = tf.train.AdamOptimizer(self.learning_rate, beta1=self.beta1) \
-                .minimize(self.d_loss, var_list=d_vars)
-            self.g_optim = tf.train.AdamOptimizer(self.learning_rate * 5, beta1=self.beta1) \
-                .minimize(self.g_loss, var_list=g_vars)
-            self.q_optim = tf.train.AdamOptimizer(self.learning_rate * 5, beta1=self.beta1) \
-                .minimize(self.q_loss, var_list=q_vars)
-
         """" Testing """
         # for test
         self.fake_images = self.generator(self.z, self.y, is_training=False, reuse=True)
@@ -180,8 +159,22 @@ class infoGAN(object):
         self.d_sum = tf.summary.merge([d_loss_real_sum, d_loss_sum])
         self.q_sum = tf.summary.merge([q_loss_sum, q_disc_sum, q_cont_sum])
 
-    def train(self, checkpoint_dir, result_dir, log_dir):
+    def train(self, params):
+        """ Training """
+        # divide trainable variables into a group for D and a group for G
+        t_vars = tf.trainable_variables()
+        d_vars = [var for var in t_vars if 'd_' in var.name]
+        g_vars = [var for var in t_vars if 'g_' in var.name]
+        q_vars = [var for var in t_vars if 'd_' or 'c_' or 'g_' in var.name]
 
+        # optimizers
+        with tf.control_dependencies(tf.get_collection(tf.GraphKeys.UPDATE_OPS)):
+            self.d_optim = tf.train.AdamOptimizer(params.lrD, beta1=params.beta1, beta2=params.beta2) \
+                .minimize(self.d_loss, var_list=d_vars)
+            self.g_optim = tf.train.AdamOptimizer(params.lrG * 5, beta1=params.beta1, beta2=params.beta2) \
+                .minimize(self.g_loss, var_list=g_vars)
+            self.q_optim = tf.train.AdamOptimizer(params.lrG * 5, beta1=params.beta1, beta2=params.beta2) \
+                .minimize(self.q_loss, var_list=q_vars)
         # initialize all variables
         tf.global_variables_initializer().run()
 
@@ -196,7 +189,7 @@ class infoGAN(object):
         self.saver = tf.train.Saver()
 
         # summary writer
-        self.writer = tf.summary.FileWriter(log_dir, self.sess.graph)
+        self.writer = tf.summary.FileWriter(params.log_dir, self.sess.graph)
 
         # restore check-point if it exits
         # could_load, checkpoint_counter = self.load(self.checkpoint_dir)
@@ -213,7 +206,7 @@ class infoGAN(object):
 
         # loop for epoch
         start_time = time.time()
-        for epoch in range(start_epoch, self.epoch):
+        for epoch in range(start_epoch, params.epoch):
 
             # get batch data
             for idx in range(start_batch_id, self.num_batches):
@@ -258,7 +251,7 @@ class infoGAN(object):
                     manifold_h = int(np.floor(np.sqrt(tot_num_samples)))
                     manifold_w = int(np.floor(np.sqrt(tot_num_samples)))
                     save_images(samples[:manifold_h * manifold_w, :, :, :], [manifold_h, manifold_w],
-                                './' + result_dir + '/' + self.model_name + '_train_{:02d}_{:04d}.png'.format(
+                                './' + params.result_dir + '/' + self.model_name + '_train_{:02d}_{:04d}.png'.format(
                                     epoch, idx))
 
             # After an epoch, start_batch_id is set to zero
@@ -266,13 +259,13 @@ class infoGAN(object):
             start_batch_id = 0
 
             # save model
-            self.save(checkpoint_dir, counter)
+            self.save(params.checkpoint_dir, counter)
 
             # show temporal results
-            self.visualize_results(epoch, result_dir)
+            self.visualize_results(epoch, params.result_dir)
 
         # save model for final step
-        self.save(checkpoint_dir, counter)
+        self.save(params.checkpoint_dir, counter)
 
     def visualize_results(self, epoch, result_dir):
         tot_num_samples = min(self.sample_num, self.batch_size)
@@ -352,7 +345,7 @@ class infoGAN(object):
     @property
     def model_dir(self):
         return "{}_{}_{}_{}".format(
-            self.dataset_name, self.batch_size,
+            self.dataset, self.batch_size,
             self.output_height, self.output_width)
 
     def save(self, checkpoint_dir, step):

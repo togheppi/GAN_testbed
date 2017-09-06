@@ -84,20 +84,17 @@ class discriminator(nn.Module):
         return d, c
 
 class ACGAN(object):
-    def __init__(self, args):
+    def __init__(self, params):
         # parameters
-        self.epoch = args.epoch
         self.sample_num = 100
-        self.batch_size = args.batch_size
-        self.dataset = args.dataset
-        self.gpu_mode = args.gpu_mode
-        self.model_name = args.gan_type
+        self.batch_size = params.batch_size
+        self.dataset = params.dataset
+        self.gpu_mode = params.gpu_mode
+        self.model_name = params.gan_type
 
         # networks init
         self.G = generator(self.dataset)
         self.D = discriminator(self.dataset)
-        self.G_optimizer = optim.Adam(self.G.parameters(), lr=args.lrG, betas=(args.beta1, args.beta2))
-        self.D_optimizer = optim.Adam(self.D.parameters(), lr=args.lrD, betas=(args.beta1, args.beta2))
 
         if self.gpu_mode:
             self.G.cuda()
@@ -114,7 +111,7 @@ class ACGAN(object):
         print('-----------------------------------------------')
 
         # load mnist
-        self.data_X, self.data_Y = pt_gan.utils.load_mnist(args.dataset)
+        self.data_X, self.data_Y = pt_gan.utils.load_mnist(params.dataset)
         self.z_dim = 62
         self.y_dim = 10
 
@@ -140,7 +137,11 @@ class ACGAN(object):
         else:
             self.sample_z_, self.sample_y_ = Variable(self.sample_z_, volatile=True), Variable(self.sample_y_, volatile=True)
 
-    def train(self, save_dir, result_dir, log_dir):
+    def train(self, params):
+        # optimizer
+        self.G_optimizer = optim.Adam(self.G.parameters(), lr=params.lrG, betas=(params.beta1, params.beta2))
+        self.D_optimizer = optim.Adam(self.D.parameters(), lr=params.lrD, betas=(params.beta1, params.beta2))
+
         self.train_hist = {}
         self.train_hist['D_loss'] = []
         self.train_hist['G_loss'] = []
@@ -153,13 +154,13 @@ class ACGAN(object):
             self.y_real_, self.y_fake_ = Variable(torch.ones(self.batch_size, 1)), Variable(torch.zeros(self.batch_size, 1))
 
         # set the logger for tensorboard
-        logger = Logger(log_dir)
+        logger = Logger(params.log_dir)
         step = 0
 
         self.D.train()
         print('training start!!')
         start_time = time.time()
-        for epoch in range(self.epoch):
+        for epoch in range(params.epoch):
             self.G.train()
             epoch_start_time = time.time()
             for iter in range(len(self.data_X) // self.batch_size):
@@ -220,16 +221,16 @@ class ACGAN(object):
                 step += 1
 
             self.train_hist['per_epoch_time'].append(time.time() - epoch_start_time)
-            self.visualize_results((epoch+1), result_dir)
+            self.visualize_results((epoch+1), params.result_dir)
 
         self.train_hist['total_time'].append(time.time() - start_time)
         print("Avg one epoch time: %.2f, total %d epochs time: %.2f" % (np.mean(self.train_hist['per_epoch_time']),
-                                                                        self.epoch, self.train_hist['total_time'][0]))
+                                                                        params.epoch, self.train_hist['total_time'][0]))
         print("Training finish!... save training results")
 
-        self.save(save_dir)
-        pt_gan.utils.generate_animation(result_dir + '/' + self.model_name, self.epoch)
-        pt_gan.utils.loss_plot(self.train_hist, save_dir, self.model_name)
+        self.save(params.save_dir)
+        pt_gan.utils.generate_animation(params.result_dir + '/' + self.model_name, params.epoch)
+        pt_gan.utils.loss_plot(self.train_hist, params.save_dir, self.model_name)
 
     def visualize_results(self, epoch, result_dir, fix=True):
         self.G.eval()
